@@ -1,0 +1,27 @@
+[package]
+name = "type3"
+version = "0.1.0"
+edition = "2024"
+description = "One-litre procedural planet: Vulkan foundation"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+ash = "0.38"
+ash-window = "0.13"
+bytemuck = { version = "1", features = ["derive"] }
+egui = "0.33"
+egui-winit = "0.33"
+egui-ash-renderer = "0.10"
+glam = "0.30"
+raw-window-handle = "0.6"
+winit = "0.30"
+
+[build-dependencies]
+naga = { version = "27", features = ["wgsl-in", "spv-out"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

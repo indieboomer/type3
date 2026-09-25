@@ -1,5 +1,9 @@
 # Stage 1 – One-Litre Procedural Planet Prototype
 
+> **Implementation started:** the Vulkan foundation is runnable with `cargo run --release`.
+> See [development status, controls and verification](docs/DEVELOPMENT.md).
+> The specification below describes the full target; procedural terrain and volumetric rendering are still pending.
+
 ## 1. Project Goal
 
 Build a standalone experimental renderer/simulation prototype in **Rust + Vulkan** that demonstrates a single procedural planet whose underlying matter model is addressable at a fixed spatial resolution of:
