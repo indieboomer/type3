@@ -11,6 +11,8 @@ pub struct Camera {
     pub orientation: DQuat,
     pub mode: CameraMode,
     pub radius: f64,
+    pub surface_radius: f64,
+    pub speed_scale: f64,
 }
 
 impl Camera {
@@ -20,6 +22,8 @@ impl Camera {
             orientation: DQuat::IDENTITY,
             mode: CameraMode::Orbit,
             radius,
+            surface_radius: radius,
+            speed_scale: 1.0,
         }
     }
 
@@ -27,7 +31,8 @@ impl Camera {
         self.position.length() - self.radius
     }
     pub fn speed(&self) -> f64 {
-        (self.altitude().abs() * 0.5).clamp(0.1, self.radius * 2.0)
+        ((self.position.length() - self.surface_radius).abs() * 0.5).clamp(0.1, self.radius * 2.0)
+            * self.speed_scale
     }
     pub fn forward(&self) -> DVec3 {
         self.orientation * -DVec3::Z
@@ -42,7 +47,7 @@ impl Camera {
         };
     }
 
-    fn look_at_center(&mut self) {
+    pub fn look_at_center(&mut self) {
         let z = self.position.normalize_or_zero();
         let up = if z.y.abs() > 0.99 { DVec3::Z } else { DVec3::Y };
         let x = up.cross(z).normalize_or_zero();
@@ -51,9 +56,15 @@ impl Camera {
     }
 
     pub fn rotate(&mut self, dx: f64, dy: f64) {
-        let rotation = DQuat::from_rotation_y(-dx * 0.004)
-            * self.orientation
-            * DQuat::from_rotation_x(-dy * 0.004);
+        let rotation = if self.mode == CameraMode::Orbit {
+            DQuat::from_rotation_y(-dx * 0.004)
+                * self.orientation
+                * DQuat::from_rotation_x(-dy * 0.004)
+        } else {
+            self.orientation
+                * DQuat::from_rotation_y(-dx * 0.0025)
+                * DQuat::from_rotation_x(-dy * 0.0025)
+        };
         self.orientation = rotation.normalize();
         if self.mode == CameraMode::Orbit {
             self.position = self.orientation * DVec3::Z * self.position.length();
@@ -62,11 +73,12 @@ impl Camera {
 
     pub fn zoom(&mut self, lines: f64) {
         if self.mode == CameraMode::Orbit {
-            let height = (self.altitude().max(0.25) * (-lines * 0.15).exp())
-                .clamp(0.25, self.radius * 100.0);
-            self.position = self.position.normalize() * (self.radius + height);
+            let height = ((self.position.length() - self.surface_radius).max(0.25)
+                * (-lines * 0.15).exp())
+            .clamp(0.25, self.radius * 100.0);
+            self.position = self.position.normalize() * (self.surface_radius + height);
         } else {
-            self.position += self.forward() * lines * self.speed() * 0.1;
+            self.speed_scale = (self.speed_scale * (lines * 0.2).exp()).clamp(0.01, 100.0);
         }
     }
 
@@ -74,6 +86,15 @@ impl Camera {
         if self.mode == CameraMode::FreeFlight {
             self.position +=
                 self.orientation * local.normalize_or_zero() * self.speed() * multiplier * seconds;
+        }
+    }
+
+    /// Positive input banks left (Q); negative banks right (E). Roll rotates
+    /// the local frame around forward without changing position or heading.
+    pub fn roll(&mut self, input: f64, seconds: f64) {
+        if self.mode == CameraMode::FreeFlight {
+            self.orientation =
+                (self.orientation * DQuat::from_rotation_z(input * seconds * 1.2)).normalize();
         }
     }
 
@@ -92,6 +113,22 @@ impl Camera {
 mod tests {
     use super::*;
     use crate::world::EARTH_RADIUS_METERS;
+
+    #[test]
+    fn roll_banks_local_frame_without_translation_or_heading_change() {
+        let mut camera = Camera::new(EARTH_RADIUS_METERS);
+        camera.toggle_mode();
+        camera.rotate(123.0, -45.0);
+        let position = camera.position;
+        let forward = camera.forward();
+        let orientation = camera.orientation;
+        camera.roll(1.0, 0.5);
+        assert_eq!(camera.position, position);
+        assert!(camera.forward().distance(forward) < 1e-12);
+        assert!((camera.orientation * DVec3::Y).distance(orientation * DVec3::Y) > 0.1);
+        camera.roll(-1.0, 0.5);
+        assert!(camera.orientation.dot(orientation).abs() > 1.0 - 1e-12);
+    }
 
     #[test]
     fn camera_relative_precision_at_opposite_sides() {
@@ -128,5 +165,26 @@ mod tests {
         assert!((before - camera.position).length() > 0.0);
         camera.toggle_mode();
         assert!(camera.forward().dot(-camera.position.normalize()) > 0.999999);
+    }
+
+    #[test]
+    fn flight_uses_local_axes_and_surface_speed_without_diagonal_boost() {
+        let mut camera = Camera::new(EARTH_RADIUS_METERS);
+        camera.mode = CameraMode::FreeFlight;
+        camera.position = DVec3::Z * (EARTH_RADIUS_METERS + 3001.0);
+        camera.surface_radius = EARTH_RADIUS_METERS + 3000.0;
+        assert_eq!(camera.speed(), 0.5);
+        camera.orientation = DQuat::from_rotation_z(1.2);
+        let before = camera.orientation;
+        camera.rotate(100.0, 0.0);
+        let expected = before * DQuat::from_rotation_y(-0.25);
+        assert!(camera.forward().distance(expected * -DVec3::Z) < 1e-12);
+        let start = camera.position;
+        camera.translate(DVec3::new(1.0, 0.0, -1.0), 0.1, 1.0);
+        assert!((camera.position.distance(start) - 0.05).abs() < 1e-8);
+        let start = camera.position;
+        camera.zoom(5.0);
+        assert_eq!(camera.position, start);
+        assert!(camera.speed_scale > 1.0);
     }
 }

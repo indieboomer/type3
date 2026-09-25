@@ -1,8 +1,8 @@
 # Stage 1 – One-Litre Procedural Planet Prototype
 
-> **Implementation started:** the Vulkan foundation is runnable with `cargo run --release`.
+> **Milestone 4 implemented:** near-field volumetric terrain now samples down to 0.10 m in bounded nested bricks, alongside the macro planet, matter queries, free flight and stars. Q/E roll left/right; Space/C move up/down. Run with `cargo run --release`.
 > See [development status, controls and verification](docs/DEVELOPMENT.md).
-> The specification below describes the full target; procedural terrain and volumetric rendering are still pending.
+> The specification below describes the full target; ray-based cell inspection and transition polish remain. See the [fractal terrain analysis](docs/FRACTAL_TERRAIN.md) for increasing detail toward the surface.
 
 ## 1. Project Goal
 

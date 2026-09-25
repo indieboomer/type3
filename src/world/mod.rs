@@ -5,6 +5,74 @@ pub const CELL_SIZE_METERS: f64 = 0.1;
 pub const EARTH_RADIUS_METERS: f64 = 6_371_000.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GenerationVersion(pub u32);
+
+impl std::fmt::Display for GenerationVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialId {
+    Vacuum,
+    Air,
+    Soil,
+    Sand,
+    Granite,
+    Basalt,
+    Limestone,
+    Ice,
+}
+
+impl MaterialId {
+    pub fn color(self) -> [f32; 3] {
+        match self {
+            Self::Vacuum => [0.0; 3],
+            Self::Air => [0.6, 0.7, 0.9],
+            Self::Soil => [0.23, 0.29, 0.14],
+            Self::Sand => [0.48, 0.38, 0.22],
+            Self::Granite => [0.38, 0.34, 0.30],
+            Self::Basalt => [0.12, 0.18, 0.22],
+            Self::Limestone => [0.60, 0.57, 0.48],
+            Self::Ice => [0.78, 0.85, 0.9],
+        }
+    }
+}
+
+/// Signed field value in metre-like units, not mass density or an exact SDF.
+/// Positive is solid; zero and negative are empty. Sampled at the cell centre.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CellSample {
+    pub density: f64,
+    pub material: MaterialId,
+}
+
+pub trait CellOverrideProvider {
+    fn get_override(&self, cell: CellCoord) -> Option<CellSample>;
+}
+
+pub struct EmptyOverrideProvider;
+
+impl CellOverrideProvider for EmptyOverrideProvider {
+    fn get_override(&self, _cell: CellCoord) -> Option<CellSample> {
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SampleSource {
+    Procedural,
+    Override,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectiveCellSample {
+    pub sample: CellSample,
+    pub source: SampleSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CellCoord {
     pub x: i64,
     pub y: i64,

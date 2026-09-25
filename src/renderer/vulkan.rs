@@ -333,11 +333,13 @@ impl VulkanRenderer {
         renderer.create_render_pass()?;
         renderer.create_pipeline()?;
         renderer.vertices = renderer.create_buffer(
-            (vertex_count * size_of::<Vertex>()) as u64,
+            ((super::terrain::MAX_VERTICES + crate::voxel::MAX_VERTICES).max(vertex_count)
+                * size_of::<Vertex>()) as u64,
             vk::BufferUsageFlags::VERTEX_BUFFER,
         )?;
         renderer.indices = renderer.create_buffer(
-            std::mem::size_of_val(indices) as u64,
+            ((super::terrain::MAX_INDICES + crate::voxel::MAX_INDICES).max(indices.len())
+                * size_of::<u32>()) as u64,
             vk::BufferUsageFlags::INDEX_BUFFER,
         )?;
         renderer.upload(&renderer.indices, bytemuck::cast_slice(indices))?;
@@ -490,8 +492,8 @@ impl VulkanRenderer {
             };
             let result = (|| -> Result<()> {
                 let ranges = [vk::PushConstantRange::default()
-                    .stage_flags(vk::ShaderStageFlags::VERTEX)
-                    .size(64)];
+                    .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                    .size(112)];
                 self.pipeline_layout = device.create_pipeline_layout(
                     &vk::PipelineLayoutCreateInfo::default().push_constant_ranges(&ranges),
                     None,
@@ -523,6 +525,12 @@ impl VulkanRenderer {
                         binding: 0,
                         format: vk::Format::R32G32B32_SFLOAT,
                         offset: 12,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 2,
+                        binding: 0,
+                        format: vk::Format::R32G32B32_SFLOAT,
+                        offset: 24,
                     },
                 ];
                 let input = vk::PipelineVertexInputStateCreateInfo::default()
@@ -719,7 +727,8 @@ impl VulkanRenderer {
     pub fn draw(
         &mut self,
         vertices: &[Vertex],
-        matrix: [f32; 16],
+        indices: &[u32],
+        scene: crate::voxel::SceneDraw<'_>,
         primitives: &[egui::ClippedPrimitive],
         textures: &egui::TexturesDelta,
         pixels_per_point: f32,
@@ -748,6 +757,8 @@ impl VulkanRenderer {
             };
             self.needs_resize |= suboptimal;
             self.upload(&self.vertices, bytemuck::cast_slice(vertices))?;
+            self.upload(&self.indices, bytemuck::cast_slice(indices))?;
+            self.index_count = indices.len() as u32;
             device.reset_command_buffer(self.command, vk::CommandBufferResetFlags::empty())?;
             device.begin_command_buffer(
                 self.command,
@@ -801,14 +812,30 @@ impl VulkanRenderer {
                 0,
                 vk::IndexType::UINT32,
             );
-            device.cmd_push_constants(
-                self.command,
-                self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
-                0,
-                bytemuck::cast_slice(&matrix),
-            );
-            device.cmd_draw_indexed(self.command, self.index_count, 1, 0, 0, 0);
+            for batch in scene.batches {
+                debug_assert!(batch.first_index + batch.index_count <= self.index_count);
+                let mut push = [0.0_f32; 28];
+                push[..16].copy_from_slice(&scene.matrix);
+                push[16..20].copy_from_slice(&batch.outer);
+                push[20..24].copy_from_slice(&batch.inner);
+                push[24] = batch.kind;
+                push[25] = batch.strength;
+                device.cmd_push_constants(
+                    self.command,
+                    self.pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    0,
+                    bytemuck::cast_slice(&push),
+                );
+                device.cmd_draw_indexed(
+                    self.command,
+                    batch.index_count,
+                    1,
+                    batch.first_index,
+                    0,
+                    0,
+                );
+            }
             self.ui.as_mut().unwrap().cmd_draw(
                 self.command,
                 self.extent,

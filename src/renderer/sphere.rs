@@ -7,6 +7,7 @@ use glam::DVec3;
 pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
+    pub color: [f32; 3],
 }
 
 pub struct Sphere {
@@ -55,6 +56,7 @@ impl Sphere {
                 .map(|(&p, &normal)| Vertex {
                     position: camera.relative(p).to_array(),
                     normal,
+                    color: [0.26, 0.34, 0.4],
                 }),
         );
     }
